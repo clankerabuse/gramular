@@ -1,0 +1,337 @@
+/* Gramular inline UI. Everything is scoped under .gramular-root and uses a high
+   z-index plus style resets so host-page CSS cannot break the bubble. */
+
+.gramular-root {
+  position: fixed;
+  z-index: 2147483646; /* just below max so dialogs can still sit above if needed */
+  top: 0;
+  left: 0;
+  display: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #1a1a1a;
+  text-align: left;
+  direction: ltr;
+}
+
+.gramular-root.gramular-visible {
+  display: block;
+}
+
+.gramular-root *,
+.gramular-root *::before,
+.gramular-root *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* --- Bubble ------------------------------------------------------------- */
+
+.gramular-bubble {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.28);
+  user-select: none;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.gramular-bubble:hover {
+  background: #1d4ed8;
+  transform: scale(1.06);
+}
+
+.gramular-bubble.gramular-bubble-active {
+  background: #1d4ed8;
+}
+
+.gramular-bubble-icon {
+  display: block;
+  pointer-events: none;
+}
+
+/* --- Panel -------------------------------------------------------------- */
+
+.gramular-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 268px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e2e2;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.20);
+  padding: 12px;
+  color: #1a1a1a;
+}
+
+.gramular-hidden {
+  display: none !important;
+}
+
+/* --- Header ------------------------------------------------------------- */
+
+.gramular-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gramular-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.gramular-x {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+  color: #888;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.gramular-x:hover {
+  color: #1a1a1a;
+  background: #f0f0f0;
+}
+
+/* --- Shared button base ------------------------------------------------- */
+
+.gramular-action,
+.gramular-run,
+.gramular-replace,
+.gramular-copy {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.gramular-action:disabled,
+.gramular-run:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Primary (filled) buttons */
+.gramular-run,
+.gramular-replace {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.gramular-run:hover,
+.gramular-replace:hover {
+  background: #1d4ed8;
+}
+
+/* Secondary (neutral) buttons — now primary blue for Prompt */
+.gramular-action,
+.gramular-copy {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.gramular-action:hover,
+.gramular-copy:hover {
+  background: #1d4ed8;
+}
+
+/* Quick Fix button — confirmation green */
+.gramular-action-improve {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+.gramular-action-improve:hover {
+  background: #15803d;
+}
+
+/* --- Action row --------------------------------------------------------- */
+
+.gramular-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gramular-action {
+  flex: 1;
+}
+
+/* --- Prompt input ------------------------------------------------------- */
+
+.gramular-prompt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gramular-prompt-input {
+  width: 100%;
+  min-height: 56px;
+  padding: 8px;
+  border: 1px solid #d6d6d6;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.gramular-prompt-input::placeholder {
+  color: #9aa0a6;
+}
+
+.gramular-prompt-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+}
+
+.gramular-run {
+  width: 100%;
+}
+
+/* --- Status ------------------------------------------------------------- */
+
+.gramular-status {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #666;
+}
+
+.gramular-status-err {
+  color: #b91c1c;
+}
+
+/* --- Result ------------------------------------------------------------- */
+
+.gramular-result-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gramular-result {
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 9px;
+  border: 1px solid #e2e2e2;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.gramular-result-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.gramular-replace,
+.gramular-copy {
+  flex: 1;
+}
+
+/* --- Dark mode ---------------------------------------------------------- */
+
+@media (prefers-color-scheme: dark) {
+  .gramular-panel {
+    background: #1f1f22;
+    border-color: #3a3a3f;
+    color: #e6e6e6;
+  }
+
+  .gramular-panel-title {
+    color: #e6e6e6;
+  }
+
+  .gramular-x {
+    color: #9a9a9a;
+  }
+
+  .gramular-x:hover {
+    color: #ffffff;
+    background: #34343a;
+  }
+
+  .gramular-action,
+  .gramular-copy {
+    background: #2563eb;
+    color: #e6e6e6;
+  }
+
+  .gramular-action:hover,
+  .gramular-copy:hover {
+    background: #1d4ed8;
+  }
+
+  .gramular-action-improve {
+    background: #16a34a;
+    color: #ffffff;
+  }
+
+  .gramular-action-improve:hover {
+    background: #15803d;
+  }
+
+  .gramular-prompt-input {
+    background: #2a2a2e;
+    border-color: #3a3a3f;
+    color: #e6e6e6;
+  }
+
+  .gramular-prompt-input::placeholder {
+    color: #777;
+  }
+
+  .gramular-status {
+    color: #9a9a9a;
+  }
+
+  .gramular-status-err {
+    color: #f87171;
+  }
+
+  .gramular-result {
+    background: #2a2a2e;
+    border-color: #3a3a3f;
+    color: #e6e6e6;
+  }
+}

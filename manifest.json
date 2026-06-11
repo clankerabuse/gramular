@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "Gramular",
+  "version": "0.4.0",
+  "description": "Inline grammar, spelling, clarity checks and AI-powered text editing, powered by Claude or Grok. A popup appears beside text fields as you type.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://api.x.ai/*"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "gramular@gramular",
+      "strict_min_version": "109.0"
+    }
+  },
+  "action": {
+    "default_title": "Gramular settings",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "prompt-mode": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Space"
+      },
+      "description": "Open the Gramular prompt input on the focused field"
+    },
+    "quick-fix": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Comma"
+      },
+      "description": "Instantly improve the text in the focused field"
+    }
+  }
+}

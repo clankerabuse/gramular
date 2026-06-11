@@ -1,0 +1,136 @@
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666;
+  --border: #d0d0d0;
+  --input-bg: #f7f7f7;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --secondary-bg: #eaeaea;
+  --error: #b91c1c;
+  --ok: #15803d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1e;
+    --fg: #e6e6e6;
+    --muted: #9a9a9a;
+    --border: #3a3a3a;
+    --input-bg: #2a2a2a;
+    --accent: #3b82f6;
+    --accent-fg: #ffffff;
+    --secondary-bg: #333333;
+    --error: #f87171;
+    --ok: #4ade80;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  width: 300px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  padding: 12px;
+}
+
+.header {
+  margin-bottom: 8px;
+}
+
+.title {
+  font-size: 16px;
+  margin: 0;
+  font-weight: 600;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+
+.settings {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-top: 8px;
+  display: block;
+}
+
+.text-input,
+.select-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.text-input:focus,
+.select-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.checkbox-row input {
+  margin: 0;
+}
+
+.btn {
+  padding: 9px 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 12px;
+}
+
+.btn:hover {
+  filter: brightness(1.08);
+}
+
+.status {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 8px 0 0;
+  min-height: 14px;
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.err {
+  color: var(--error);
+}
