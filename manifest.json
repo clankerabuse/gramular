@@ -2,14 +2,15 @@
   "manifest_version": 3,
   "name": "Gramular",
   "version": "0.4.0",
-  "description": "Inline grammar, spelling, clarity checks and AI-powered text editing, powered by Claude or Grok. A popup appears beside text fields as you type.",
+  "description": "Inline grammar, spelling, clarity checks and AI-powered text editing, powered by Claude, Grok, or OpenAI. A popup appears beside text fields as you type.",
   "permissions": [
     "storage",
     "activeTab"
   ],
   "host_permissions": [
     "https://api.anthropic.com/*",
-    "https://api.x.ai/*"
+    "https://api.x.ai/*",
+    "https://api.openai.com/*"
   ],
   "browser_specific_settings": {
     "gecko": {

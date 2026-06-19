@@ -7,9 +7,15 @@
 const ANTHROPIC_BASE = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION = "2023-06-01";
 const XAI_BASE = "https://api.x.ai/v1";
-const DEFAULT_PROVIDER = "anthropic";
-const DEFAULT_MODEL = "claude-haiku-4-5-20251001";
+const OPENAI_BASE = "https://api.openai.com/v1";
+const DEFAULT_PROVIDER = "xai";
 const MAX_TOKENS = 4096;
+
+const PROVIDER_DEFAULTS = {
+  anthropic: { label: "Anthropic (Claude)", defaultModel: "claude-haiku-4-5-20251001", keyField: "apiKey" },
+  xai: { label: "xAI (Grok)", defaultModel: "grok-4.3", keyField: "xaiApiKey" },
+  openai: { label: "OpenAI", defaultModel: "gpt-4o", keyField: "openaiApiKey" },
+};
 
 const FIX_SYSTEM_PROMPT = [
   "You are Gramular, a meticulous copy editor specializing in capitalization, spelling, and grammar.",
@@ -129,92 +135,165 @@ function extractText(json) {
   return "";
 }
 
-function extractXaiText(json) {
+function extractChatCompletionText(json) {
   if (json && json.choices && json.choices[0] && json.choices[0].message) {
     return (json.choices[0].message.content || "").trim();
   }
   return "";
 }
 
-async function callModel({ systemPrompt, userContent }) {
-  const { provider = DEFAULT_PROVIDER, apiKey, xaiApiKey, model } =
-    await browser.storage.local.get(["provider", "apiKey", "xaiApiKey", "model"]);
-
-  const useXai = provider === "xai";
-  const chosenModel = model || (useXai ? "grok-4.3" : DEFAULT_MODEL);
-
-  if (useXai) {
-    if (!xaiApiKey) {
-      return { ok: false, error: "No xAI API key set. Click the Gramular toolbar icon to add one." };
+function extractOpenAIResponsesText(json) {
+  if (json && typeof json.output_text === "string" && json.output_text.trim()) {
+    return json.output_text.trim();
+  }
+  if (json && Array.isArray(json.output)) {
+    let text = "";
+    for (const item of json.output) {
+      if (item.type !== "message" || !Array.isArray(item.content)) continue;
+      for (const part of item.content) {
+        if (part.type === "output_text" && part.text) text += part.text;
+      }
     }
-  } else {
-    if (!apiKey) {
-      return { ok: false, error: "No API key set. Click the Gramular toolbar icon to add one." };
+    return text.trim();
+  }
+  return "";
+}
+
+function usesOpenAIResponses(model) {
+  return /codex/i.test(model);
+}
+
+function openaiHeaders(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function parseApiError(res) {
+  let detail = `HTTP ${res.status}`;
+  try {
+    const errJson = await res.json();
+    if (errJson.error) {
+      detail += `: ${errJson.error.message || JSON.stringify(errJson.error)}`;
     }
+  } catch (_) {
+    /* ignore */
+  }
+  return detail;
+}
+
+async function callChatCompletions({ baseUrl, apiKey, model, systemPrompt, userContent }) {
+  const body = {
+    model,
+    max_tokens: MAX_TOKENS,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+  };
+
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: openaiHeaders(apiKey),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    return { ok: false, error: `Request failed — ${await parseApiError(res)}` };
   }
 
-  // Log the full prompt so it can be inspected and fine-tuned.
-  console.group("[Gramular] API call");
-  console.log("Provider :", useXai ? "xAI (Grok)" : "Anthropic (Claude)");
-  console.log("Model    :", chosenModel);
-  console.log("System   :\n" + systemPrompt);
-  console.log("User     :\n" + userContent);
-  console.groupEnd();
+  const json = await res.json();
+  const text = extractChatCompletionText(json);
+  if (!text) {
+    return { ok: false, error: "The model returned an empty response." };
+  }
+  return { ok: true, text };
+}
 
-  if (useXai) {
-    // xAI Grok: OpenAI-compatible chat completions
+async function callOpenAIResponses({ apiKey, model, systemPrompt, userContent }) {
+  const body = {
+    model,
+    instructions: systemPrompt,
+    input: userContent,
+    max_output_tokens: MAX_TOKENS,
+  };
+
+  const res = await fetch(`${OPENAI_BASE}/responses`, {
+    method: "POST",
+    headers: openaiHeaders(apiKey),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    return { ok: false, error: `Request failed — ${await parseApiError(res)}` };
+  }
+
+  const json = await res.json();
+  const text = extractOpenAIResponsesText(json);
+  if (!text) {
+    return { ok: false, error: "The model returned an empty response." };
+  }
+  return { ok: true, text };
+}
+
+async function callModel({ systemPrompt, userContent }) {
+  const settings = await browser.storage.local.get([
+    "provider",
+    "apiKey",
+    "xaiApiKey",
+    "openaiApiKey",
+    "model",
+  ]);
+
+  const provider = settings.provider || DEFAULT_PROVIDER;
+  const providerConfig = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.anthropic;
+  const chosenModel = settings.model || providerConfig.defaultModel;
+  const apiKey = settings[providerConfig.keyField];
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: `No ${providerConfig.label} API key set. Click the Gramular toolbar icon to add one.`,
+    };
+  }
+
+  try {
+    if (provider === "xai") {
+      return await callChatCompletions({
+        baseUrl: XAI_BASE,
+        apiKey,
+        model: chosenModel,
+        systemPrompt,
+        userContent,
+      });
+    }
+
+    if (provider === "openai") {
+      if (usesOpenAIResponses(chosenModel)) {
+        return await callOpenAIResponses({
+          apiKey,
+          model: chosenModel,
+          systemPrompt,
+          userContent,
+        });
+      }
+      return await callChatCompletions({
+        baseUrl: OPENAI_BASE,
+        apiKey,
+        model: chosenModel,
+        systemPrompt,
+        userContent,
+      });
+    }
+
     const body = {
       model: chosenModel,
       max_tokens: MAX_TOKENS,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
     };
 
-    try {
-      const res = await fetch(`${XAI_BASE}/chat/completions`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${xaiApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try {
-          const errJson = await res.json();
-          if (errJson.error) {
-            detail += `: ${errJson.error.message || JSON.stringify(errJson.error)}`;
-          }
-        } catch (_) {
-          /* ignore */
-        }
-        return { ok: false, error: `Request failed — ${detail}` };
-      }
-
-      const json = await res.json();
-      const text = extractXaiText(json);
-      if (!text) {
-        return { ok: false, error: "The model returned an empty response." };
-      }
-      return { ok: true, text };
-    } catch (err) {
-      return { ok: false, error: `Network error: ${err.message}` };
-    }
-  }
-
-  // Anthropic (Claude) path
-  const body = {
-    model: chosenModel,
-    max_tokens: MAX_TOKENS,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userContent }],
-  };
-
-  try {
     const res = await fetch(`${ANTHROPIC_BASE}/messages`, {
       method: "POST",
       headers: anthropicHeaders(apiKey),
@@ -222,16 +301,7 @@ async function callModel({ systemPrompt, userContent }) {
     });
 
     if (!res.ok) {
-      let detail = `HTTP ${res.status}`;
-      try {
-        const errJson = await res.json();
-        if (errJson.error) {
-          detail += `: ${errJson.error.message || JSON.stringify(errJson.error)}`;
-        }
-      } catch (_) {
-        /* ignore parse error */
-      }
-      return { ok: false, error: `Request failed — ${detail}` };
+      return { ok: false, error: `Request failed — ${await parseApiError(res)}` };
     }
 
     const json = await res.json();
@@ -262,10 +332,29 @@ browser.commands.onCommand.addListener(async (command) => {
   }
 });
 
-browser.runtime.onMessage.addListener((message) => {
+const MIN_API_INTERVAL_MS = 1000;
+let lastApiCallAt = 0;
+
+function isGramularSender(sender) {
+  return !!(sender && sender.id === browser.runtime.id);
+}
+
+function rateLimitError() {
+  const now = Date.now();
+  if (now - lastApiCallAt < MIN_API_INTERVAL_MS) {
+    return { ok: false, error: "Please wait a moment before trying again." };
+  }
+  lastApiCallAt = now;
+  return null;
+}
+
+browser.runtime.onMessage.addListener((message, sender) => {
   if (!message || typeof message !== "object") return;
+  if (!isGramularSender(sender)) return;
 
   if (message.action === "gramular:check") {
+    const limited = rateLimitError();
+    if (limited) return Promise.resolve(limited);
     const text = (message.text || "").trim();
     if (!text) return Promise.resolve({ ok: false, error: "No text to check." });
     const userContent =
@@ -288,6 +377,8 @@ browser.runtime.onMessage.addListener((message) => {
   }
 
   if (message.action === "gramular:prompt") {
+    const limited = rateLimitError();
+    if (limited) return Promise.resolve(limited);
     const text = (message.text || "").trim();
     const prompt = (message.prompt || "").trim();
     if (!text) return Promise.resolve({ ok: false, error: "No text to edit." });

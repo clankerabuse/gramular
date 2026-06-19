@@ -13,10 +13,21 @@
 
   const NS = "gramular";
   let enabled = true;
+  let skipConfirm = false;
+  let pendingResult = null;
+
+  function isGramularSender(sender) {
+    return !!(sender && sender.id === browser.runtime.id);
+  }
+
+  function isTrustedEvent(event) {
+    return !!(event && event.isTrusted);
+  }
 
   // Read the enabled flag and keep it in sync.
-  browser.storage.local.get(["enabled"]).then((d) => {
+  browser.storage.local.get(["enabled", "skipConfirm"]).then((d) => {
     enabled = d && d.enabled !== false;
+    skipConfirm = d && d.skipConfirm === true;
     // If an eligible field already has focus, show the bubble now.
     if (enabled && isEligible(document.activeElement)) {
       showBubbleFor(document.activeElement);
@@ -27,11 +38,15 @@
       enabled = changes.enabled.newValue !== false;
       if (!enabled) destroyUI();
     }
+    if (area === "local" && changes.skipConfirm) {
+      skipConfirm = changes.skipConfirm.newValue === true;
+    }
   });
 
   // Handle keyboard commands forwarded from the background script.
-  browser.runtime.onMessage.addListener((message) => {
+  browser.runtime.onMessage.addListener((message, sender) => {
     if (!message || !enabled) return;
+    if (!isGramularSender(sender)) return;
 
     if (message.action === "gramular:cmd:quick-fix") {
       const field = document.activeElement;
@@ -519,8 +534,12 @@
       </div>
       <div class="${NS}-status ${NS}-hidden"></div>
       <div class="${NS}-result-wrap ${NS}-hidden">
-         <div class="${NS}-result" contenteditable="false"></div>
-       </div>
+        <div class="${NS}-result" contenteditable="false"></div>
+        <div class="${NS}-result-actions">
+          <button type="button" class="${NS}-replace">Apply</button>
+          <button type="button" class="${NS}-copy">Discard</button>
+        </div>
+      </div>
     `;
 
     root.appendChild(bubble);
@@ -539,6 +558,8 @@
       status: panel.querySelector(`.${NS}-status`),
       resultWrap: panel.querySelector(`.${NS}-result-wrap`),
       result: panel.querySelector(`.${NS}-result`),
+      applyBtn: panel.querySelector(`.${NS}-replace`),
+      discardBtn: panel.querySelector(`.${NS}-copy`),
     };
 
     wireUI(ui);
@@ -574,6 +595,7 @@
     u.actions.forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
+        if (!isTrustedEvent(e)) return;
         const act = btn.getAttribute("data-act");
         if (act === "improve") runImprove();
         else if (act === "prompt") togglePromptInput();
@@ -583,13 +605,28 @@
     u.promptInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        if (!isTrustedEvent(e)) return;
         runPrompt();
       }
     });
 
     u.runBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (!isTrustedEvent(e)) return;
       runPrompt();
+    });
+
+    u.applyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!isTrustedEvent(e)) return;
+      applyPendingResult();
+    });
+
+    u.discardBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!isTrustedEvent(e)) return;
+      clearPendingResult();
+      ui.resultWrap.classList.add(`${NS}-hidden`);
     });
 
     u.panel.addEventListener("mousedown", (e) => e.stopPropagation());
@@ -686,8 +723,30 @@
     ui.promptWrap.classList.add(`${NS}-hidden`);
     ui.promptInput.value = "";
     hideStatus();
+    clearPendingResult();
     ui.resultWrap.classList.add(`${NS}-hidden`);
-    ui.result.textContent = "";
+  }
+
+  function clearPendingResult() {
+    pendingResult = null;
+    if (ui) ui.result.textContent = "";
+  }
+
+  function showResultPreview(text) {
+    pendingResult = text;
+    ui.result.textContent = text;
+    ui.resultWrap.classList.remove(`${NS}-hidden`);
+    positionPanel();
+  }
+
+  function applyPendingResult() {
+    if (!pendingResult || !currentField) return;
+    const field = currentField;
+    const text = pendingResult;
+    clearPendingResult();
+    closePanel();
+    setFieldText(field, text);
+    field.focus();
   }
 
   function togglePromptInput() {
@@ -713,6 +772,15 @@
   function setBusy(on) {
     ui.actions.forEach((b) => (b.disabled = on));
     ui.runBtn.disabled = on;
+    if (ui.applyBtn) ui.applyBtn.disabled = on;
+    if (ui.discardBtn) ui.discardBtn.disabled = on;
+  }
+
+  function confirmApiUse(label) {
+    if (skipConfirm) return true;
+    return window.confirm(
+      `Gramular will send this field's text to your configured AI provider to ${label}. Continue?`,
+    );
   }
 
   // --- Running actions ------------------------------------------------------
@@ -724,6 +792,7 @@
       setStatus("The field is empty.", "err");
       return;
     }
+    if (!confirmApiUse("improve it")) return;
     setBusy(true);
     setStatus("Improving…", "");
     try {
@@ -739,11 +808,8 @@
         setStatus(resp.error || "Something went wrong.", "err");
         return;
       }
-      // Auto-replace the field text and close the panel.
-      const field = currentField;
-      closePanel();
-      setFieldText(field, resp.text);
-      field.focus();
+      hideStatus();
+      showResultPreview(resp.text);
     } catch (err) {
       setStatus(`Error: ${err.message}`, "err");
     } finally {
@@ -763,6 +829,7 @@
       setStatus("Enter a prompt first.", "err");
       return;
     }
+    if (!confirmApiUse("run your edit")) return;
     setBusy(true);
     setStatus("Working…", "");
     try {
@@ -789,11 +856,7 @@
       return;
     }
     hideStatus();
-    const text = resp.text;
-    // Auto-apply the result instead of showing a menu
-    closePanel();
-    setFieldText(currentField, text);
-    currentField.focus();
+    showResultPreview(resp.text);
   }
 
   // --- Show / hide bubble ---------------------------------------------------
