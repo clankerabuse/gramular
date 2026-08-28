@@ -12,9 +12,9 @@ const DEFAULT_PROVIDER = "xai";
 const MAX_TOKENS = 4096;
 
 const PROVIDER_DEFAULTS = {
-  anthropic: { label: "Anthropic (Claude)", defaultModel: "claude-haiku-4-5-20251001", keyField: "apiKey" },
-  xai: { label: "xAI (Grok)", defaultModel: "grok-4.3", keyField: "xaiApiKey" },
-  openai: { label: "OpenAI", defaultModel: "gpt-4o", keyField: "openaiApiKey" },
+  anthropic: { label: "Anthropic (Claude)", keyField: "apiKey" },
+  xai: { label: "xAI (Grok)", keyField: "xaiApiKey" },
+  openai: { label: "OpenAI", keyField: "openaiApiKey" },
 };
 
 const FIX_SYSTEM_PROMPT = [
@@ -248,13 +248,20 @@ async function callModel({ systemPrompt, userContent }) {
 
   const provider = settings.provider || DEFAULT_PROVIDER;
   const providerConfig = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.anthropic;
-  const chosenModel = settings.model || providerConfig.defaultModel;
+  const chosenModel = settings.model;
   const apiKey = settings[providerConfig.keyField];
 
   if (!apiKey) {
     return {
       ok: false,
       error: `No ${providerConfig.label} API key set. Click the Gramular toolbar icon to add one.`,
+    };
+  }
+
+  if (!chosenModel) {
+    return {
+      ok: false,
+      error: "No model selected. Open the Gramular toolbar icon, save your API key, and pick a model.",
     };
   }
 

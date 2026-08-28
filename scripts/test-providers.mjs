@@ -103,6 +103,30 @@ function runUnitTests() {
   ]);
   assert(filtered.join(",") === "gpt-4o,gpt-5-codex", "OpenAI model filter");
 
+  function isXaiChatModel(id, outputModalities) {
+    if (!id) return false;
+    const n = String(id).toLowerCase();
+    if (
+      n.includes("image") ||
+      n.includes("imagine") ||
+      n.includes("video") ||
+      n.includes("tts") ||
+      n.includes("whisper") ||
+      n.includes("embed") ||
+      n.includes("audio")
+    ) {
+      return false;
+    }
+    if (Array.isArray(outputModalities) && outputModalities.length && !outputModalities.includes("text")) {
+      return false;
+    }
+    return true;
+  }
+
+  assert(isXaiChatModel("grok-4.3", ["text"]), "xAI text model kept");
+  assert(!isXaiChatModel("grok-imagine-image", ["image"]), "xAI image model dropped");
+  assert(!isXaiChatModel("grok-2-image-1212"), "xAI image id dropped");
+
   console.log("All unit tests passed.");
 }
 
