@@ -12,9 +12,9 @@ const DEFAULT_PROVIDER = "xai";
 const MAX_TOKENS = 4096;
 
 const PROVIDER_DEFAULTS = {
-  anthropic: { label: "Anthropic (Claude)", defaultModel: "claude-haiku-4-5-20251001", keyField: "apiKey" },
-  xai: { label: "xAI (Grok)", defaultModel: "grok-4.3", keyField: "xaiApiKey" },
-  openai: { label: "OpenAI", defaultModel: "gpt-4o", keyField: "openaiApiKey" },
+  anthropic: { label: "Anthropic (Claude)", keyField: "apiKey" },
+  xai: { label: "xAI (Grok)", keyField: "xaiApiKey" },
+  openai: { label: "OpenAI", keyField: "openaiApiKey" },
 };
 
 const FIX_SYSTEM_PROMPT = [
@@ -57,40 +57,6 @@ const FIX_SYSTEM_PROMPT = [
   "no commentary, no surrounding quotation marks, no markdown code fences.",
 ].join("\n");
 
-const REVIEW_SYSTEM_PROMPT = [
-  "You are Gramular, a senior copy editor performing a quality review pass.",
-  "You receive the ORIGINAL text and an EDITED version produced by a junior editor.",
-  "Your job is to review the edited version and produce the final polished result.",
-  "",
-  "REVIEW CHECKLIST:",
-  "- Does the edited text preserve the original meaning and intent? If not, fix it.",
-  "- Does the edited text make logical sense? Are there any contradictions, non sequiturs,",
-  "  or garbled sentences introduced during editing? Fix any issues.",
-  "- Is every sentence complete and properly structured? Fix any fragments or run-ons.",
-  "- Are ALL capitalization rules followed? First letter of the text, first letter after",
-  "  every terminal punctuation mark, proper nouns, the pronoun \"I\", etc.",
-  "- Are ALL spelling errors corrected?",
-  "- Are ALL grammar errors corrected? Verb tense, subject-verb agreement, articles,",
-  "  pronoun usage, prepositions.",
-  "- Is ALL punctuation correct? Commas in the right places, terminal punctuation at the",
-  "  end of every sentence, proper use of apostrophes, quotation marks, colons, semicolons, dashes.",
-  "- Does the text read smoothly and naturally? Fix any awkward phrasing the junior editor",
-  "  may have introduced.",
-  "- If a user editing instruction was provided, verify the edited text follows it faithfully.",
-  "  If the instruction was partially or poorly applied, correct the text so it fully aligns.",
-  "",
-  "STRICT CONSTRAINTS:",
-  "- Preserve the author's original meaning, intent, voice, and level of formality.",
-  "- Do NOT add new ideas, facts, opinions, or content.",
-  "- Keep the original language (do not translate).",
-  "- Preserve formatting, line breaks, lists, markdown, code, URLs, @mentions,",
-  "  #hashtags, and emoji exactly as intended.",
-  "- If the edited text is already perfect, return it unchanged.",
-  "",
-  "OUTPUT FORMAT: Return ONLY the final reviewed text. No preamble, no explanations,",
-  "no commentary, no surrounding quotation marks, no markdown code fences.",
-].join("\n");
-
 const CUSTOM_SYSTEM_PROMPT = [
   "You are Gramular, an elite professional writing assistant and editor. You",
   "receive a piece of text and a specific editing instruction from the user, and",
@@ -114,6 +80,51 @@ const CUSTOM_SYSTEM_PROMPT = [
   "OUTPUT FORMAT: Return ONLY the final edited text. No preamble, no explanation,",
   "no commentary, no surrounding quotation marks, no markdown code fences.",
 ].join("\n");
+
+function outputTokenBudget(text) {
+  const chars = (text || "").length;
+  return Math.min(MAX_TOKENS, Math.max(512, Math.ceil(chars / 2) + 128));
+}
+
+function xaiReasoningEffort(model) {
+  const id = (model || "").toLowerCase();
+  if (!id || id.includes("non-reasoning") || id.includes("grok-build")) return null;
+  if (id.includes("4.5") || id.includes("4.6") || id.includes("4.20")) return "low";
+  return "none";
+}
+
+function openaiReasoningEffort(model) {
+  const id = (model || "").toLowerCase();
+  if (id.startsWith("o1") || id.startsWith("o3") || id.startsWith("o4")) return "low";
+  if (id.includes("gpt-5") || id.includes("codex")) return "low";
+  return null;
+}
+
+let cachedSettings = null;
+let settingsPromise = null;
+
+function invalidateSettingsCache() {
+  cachedSettings = null;
+  settingsPromise = null;
+}
+
+async function getProviderSettings() {
+  if (cachedSettings) return cachedSettings;
+  if (!settingsPromise) {
+    settingsPromise = browser.storage.local
+      .get(["provider", "apiKey", "xaiApiKey", "openaiApiKey", "model"])
+      .then((settings) => {
+        cachedSettings = settings;
+        settingsPromise = null;
+        return settings;
+      });
+  }
+  return settingsPromise;
+}
+
+browser.storage.onChanged.addListener((changes, area) => {
+  if (area === "local") invalidateSettingsCache();
+});
 
 function anthropicHeaders(apiKey) {
   return {
@@ -183,21 +194,45 @@ async function parseApiError(res) {
   return detail;
 }
 
-async function callChatCompletions({ baseUrl, apiKey, model, systemPrompt, userContent }) {
+async function callChatCompletions({
+  baseUrl,
+  apiKey,
+  model,
+  systemPrompt,
+  userContent,
+  maxTokens,
+  extraBody,
+}) {
   const body = {
     model,
-    max_tokens: MAX_TOKENS,
+    max_tokens: maxTokens || MAX_TOKENS,
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
     ],
+    ...(extraBody || {}),
   };
 
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  let res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: openaiHeaders(apiKey),
     body: JSON.stringify(body),
   });
+
+  if (!res.ok && extraBody && extraBody.reasoning_effort) {
+    const detail = await parseApiError(res);
+    if (/reasoning/i.test(detail)) {
+      const retryBody = { ...body };
+      delete retryBody.reasoning_effort;
+      res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: openaiHeaders(apiKey),
+        body: JSON.stringify(retryBody),
+      });
+    } else {
+      return { ok: false, error: `Request failed — ${detail}` };
+    }
+  }
 
   if (!res.ok) {
     return { ok: false, error: `Request failed — ${await parseApiError(res)}` };
@@ -211,19 +246,36 @@ async function callChatCompletions({ baseUrl, apiKey, model, systemPrompt, userC
   return { ok: true, text };
 }
 
-async function callOpenAIResponses({ apiKey, model, systemPrompt, userContent }) {
+async function callOpenAIResponses({ apiKey, model, systemPrompt, userContent, maxTokens }) {
   const body = {
     model,
     instructions: systemPrompt,
     input: userContent,
-    max_output_tokens: MAX_TOKENS,
+    max_output_tokens: maxTokens || MAX_TOKENS,
   };
+  const effort = openaiReasoningEffort(model);
+  if (effort) body.reasoning = { effort };
 
-  const res = await fetch(`${OPENAI_BASE}/responses`, {
+  let res = await fetch(`${OPENAI_BASE}/responses`, {
     method: "POST",
     headers: openaiHeaders(apiKey),
     body: JSON.stringify(body),
   });
+
+  if (!res.ok && body.reasoning) {
+    const detail = await parseApiError(res);
+    if (/reasoning/i.test(detail)) {
+      const retryBody = { ...body };
+      delete retryBody.reasoning;
+      res = await fetch(`${OPENAI_BASE}/responses`, {
+        method: "POST",
+        headers: openaiHeaders(apiKey),
+        body: JSON.stringify(retryBody),
+      });
+    } else {
+      return { ok: false, error: `Request failed — ${detail}` };
+    }
+  }
 
   if (!res.ok) {
     return { ok: false, error: `Request failed — ${await parseApiError(res)}` };
@@ -237,19 +289,14 @@ async function callOpenAIResponses({ apiKey, model, systemPrompt, userContent })
   return { ok: true, text };
 }
 
-async function callModel({ systemPrompt, userContent }) {
-  const settings = await browser.storage.local.get([
-    "provider",
-    "apiKey",
-    "xaiApiKey",
-    "openaiApiKey",
-    "model",
-  ]);
+async function callModel({ systemPrompt, userContent, sourceText }) {
+  const settings = await getProviderSettings();
 
   const provider = settings.provider || DEFAULT_PROVIDER;
   const providerConfig = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.anthropic;
-  const chosenModel = settings.model || providerConfig.defaultModel;
+  const chosenModel = settings.model;
   const apiKey = settings[providerConfig.keyField];
+  const maxTokens = outputTokenBudget(sourceText || userContent);
 
   if (!apiKey) {
     return {
@@ -258,14 +305,26 @@ async function callModel({ systemPrompt, userContent }) {
     };
   }
 
+  if (!chosenModel) {
+    return {
+      ok: false,
+      error: "No model selected. Open the Gramular toolbar icon, save your API key, and pick a model.",
+    };
+  }
+
   try {
     if (provider === "xai") {
+      const extraBody = {};
+      const effort = xaiReasoningEffort(chosenModel);
+      if (effort) extraBody.reasoning_effort = effort;
       return await callChatCompletions({
         baseUrl: XAI_BASE,
         apiKey,
         model: chosenModel,
         systemPrompt,
         userContent,
+        maxTokens,
+        extraBody,
       });
     }
 
@@ -276,20 +335,26 @@ async function callModel({ systemPrompt, userContent }) {
           model: chosenModel,
           systemPrompt,
           userContent,
+          maxTokens,
         });
       }
+      const extraBody = {};
+      const effort = openaiReasoningEffort(chosenModel);
+      if (effort) extraBody.reasoning_effort = effort;
       return await callChatCompletions({
         baseUrl: OPENAI_BASE,
         apiKey,
         model: chosenModel,
         systemPrompt,
         userContent,
+        maxTokens,
+        extraBody,
       });
     }
 
     const body = {
       model: chosenModel,
-      max_tokens: MAX_TOKENS,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userContent }],
     };
@@ -362,18 +427,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
       "<text_to_edit>\n" +
       text +
       "\n</text_to_edit>";
-    return callModel({ systemPrompt: FIX_SYSTEM_PROMPT, userContent }).then((firstPass) => {
-      if (!firstPass.ok) return firstPass;
-      const reviewContent =
-        "Review the edited text against the original. Return the final polished version.\n\n" +
-        "<original>\n" +
-        text +
-        "\n</original>\n\n" +
-        "<edited>\n" +
-        firstPass.text +
-        "\n</edited>";
-      return callModel({ systemPrompt: REVIEW_SYSTEM_PROMPT, userContent: reviewContent });
-    });
+    return callModel({ systemPrompt: FIX_SYSTEM_PROMPT, userContent, sourceText: text });
   }
 
   if (message.action === "gramular:prompt") {
@@ -391,20 +445,6 @@ browser.runtime.onMessage.addListener((message, sender) => {
       "<text_to_edit>\n" +
       text +
       "\n</text_to_edit>";
-    return callModel({ systemPrompt: CUSTOM_SYSTEM_PROMPT, userContent }).then((firstPass) => {
-      if (!firstPass.ok) return firstPass;
-      const reviewContent =
-        "Review the edited text against the original and the user's instruction. Return the final polished version.\n\n" +
-        "<original>\n" +
-        text +
-        "\n</original>\n\n" +
-        "<instruction>\n" +
-        prompt +
-        "\n</instruction>\n\n" +
-        "<edited>\n" +
-        firstPass.text +
-        "\n</edited>";
-      return callModel({ systemPrompt: REVIEW_SYSTEM_PROMPT, userContent: reviewContent });
-    });
+    return callModel({ systemPrompt: CUSTOM_SYSTEM_PROMPT, userContent, sourceText: text });
   }
 });

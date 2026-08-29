@@ -39,6 +39,25 @@ function usesOpenAIResponses(model) {
   return /codex/i.test(model);
 }
 
+function outputTokenBudget(text) {
+  const chars = (text || "").length;
+  return Math.min(MAX_TOKENS, Math.max(512, Math.ceil(chars / 2) + 128));
+}
+
+function xaiReasoningEffort(model) {
+  const id = (model || "").toLowerCase();
+  if (!id || id.includes("non-reasoning") || id.includes("grok-build")) return null;
+  if (id.includes("4.5") || id.includes("4.6") || id.includes("4.20")) return "low";
+  return "none";
+}
+
+function openaiReasoningEffort(model) {
+  const id = (model || "").toLowerCase();
+  if (id.startsWith("o1") || id.startsWith("o3") || id.startsWith("o4")) return "low";
+  if (id.includes("gpt-5") || id.includes("codex")) return "low";
+  return null;
+}
+
 function filterOpenAIModels(ids) {
   return ids.filter((id) => {
     if (!id) return false;
@@ -93,6 +112,14 @@ function runUnitTests() {
   assert(usesOpenAIResponses("gpt-5-codex"), "codex model uses responses API");
   assert(!usesOpenAIResponses("gpt-4o"), "gpt-4o uses chat completions");
   assert(!usesOpenAIResponses("grok-4.3"), "non-openai models unaffected");
+
+  assert(outputTokenBudget("") === 512, "short text uses a 512-token floor");
+  assert(outputTokenBudget("a".repeat(20000)) === MAX_TOKENS, "long text is capped");
+  assert(xaiReasoningEffort("grok-4.3") === "none", "grok-4.3 skips reasoning");
+  assert(xaiReasoningEffort("grok-4.6") === "low", "grok-4.6 uses lowest allowed effort");
+  assert(xaiReasoningEffort("grok-build-0.1") === null, "coding models omit reasoning_effort");
+  assert(openaiReasoningEffort("gpt-4o") === null, "gpt-4o omits reasoning_effort");
+  assert(openaiReasoningEffort("gpt-5-codex") === "low", "codex uses low reasoning");
 
   const filtered = filterOpenAIModels([
     "gpt-4o",
