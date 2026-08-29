@@ -19,10 +19,25 @@ Gramular is a browser extension that places a small pencil bubble beside any tex
 
 ## Installation
 
+### Firefox
+
 1. Clone or download this repo.
 2. Open Firefox and go to `about:debugging` > **This Firefox** > **Load Temporary Add-on**.
 3. Select `manifest.json` from the project folder.
-4. Click the Gramular toolbar icon and enter your Anthropic or xAI API key.
+4. Click the Gramular toolbar icon and enter your API key.
+
+### Chromium (Chrome, Edge, Brave, etc.)
+
+1. Clone or download this repo.
+2. Build the Chromium package:
+
+   ```bash
+   node scripts/build-chromium.mjs
+   ```
+
+3. Open `chrome://extensions`, enable **Developer mode**, and click **Load unpacked**.
+4. Select the `dist/chromium` folder (not the repo root).
+5. Click the Gramular toolbar icon and enter your API key.
 
 ## Usage
 
@@ -44,7 +59,8 @@ Open the extension popup (toolbar icon) to:
 
 ## Supported Browsers
 
-Firefox 109+. The extension uses the WebExtensions `browser.*` API (Manifest V2).
+- **Firefox** 109+ — load the repo root (`manifest.json` uses Manifest V3 with background scripts).
+- **Chromium** 109+ — load the output of `node scripts/build-chromium.mjs` (`dist/chromium`), which uses a service worker background and a small `browser.*` shim over `chrome.*`.
 
 ## License
 
